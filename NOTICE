@@ -1,0 +1,15 @@
+K3s base
+Copyright (c) 2026 Florian Kessler GmbH
+
+Original project code and configuration are licensed under the Apache License,
+Version 2.0. See LICENSE for the full license text.
+
+Original project documentation is licensed under Creative Commons Attribution
+4.0 International (CC-BY-4.0):
+https://creativecommons.org/licenses/by/4.0/
+Legal terms: https://creativecommons.org/licenses/by/4.0/legalcode
+For attribution, identify K3s base and Florian Kessler GmbH, retain the license
+link, and indicate any changes.
+
+Third-party components retain their own licenses and copyright notices; these
+project licenses do not replace those terms.

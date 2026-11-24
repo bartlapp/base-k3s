@@ -1,0 +1,13 @@
+lab/
+receipts/
+installation.yaml
+clusters/
+packages/
+connections.yaml
+*.pass/
+.env
+.env.*
+*.key
+*.pem
+kubeconfig*
+.DS_Store
