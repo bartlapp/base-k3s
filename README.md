@@ -437,7 +437,11 @@ direnv allow
 
 Continue at the next prompt, after direnv reloads the approved root context. Retain any necessary local customizations deliberately; do not copy an older installation's loader into a new installation. Newly created installations already use the checkout's `installation.envrc`.
 
-For an existing deployment directory without a selector, adopt it once after the root context has reloaded. Enter the actual retained deployment directory. For the ordinary example:
+### Adopt a missing deployment selector
+
+Starting condition: the retained root loader supplies `load_deployment` and the cluster selector works. If the installation predates that interface, complete [Refresh an existing installation's context](#refresh-an-existing-installations-context) first; otherwise keep its loader unchanged.
+
+For an existing deployment directory without a selector, enter the actual retained directory. For the ordinary example:
 
 ```bash
 cd "$WORK_DIR/clusters/cluster-1/applications/keycloak"
@@ -467,7 +471,7 @@ Wait for the next shell prompt before continuing with the application's resumpti
 
 ### Work in a deployment directory
 
-Application recipes record each new deployment in `installation.yaml`, create its working directory and write a selector once. For an existing deployment without a selector, use [the one-time context refresh and adoption procedure](#refresh-an-existing-installations-context), then resume the application recipe. The root loader provides `load_deployment DEPLOYMENT_ID`; the selector must load the cluster first. For an ordinary deployment whose ID equals its instance, `clusters/<cluster>/applications/<instance>/.envrc` contains:
+Application recipes record each new deployment in `installation.yaml`, create its working directory and write a selector once. For an existing deployment without a selector, use [Adopt a missing deployment selector](#adopt-a-missing-deployment-selector), then resume the application recipe. The root loader provides `load_deployment DEPLOYMENT_ID`; the selector must load the cluster first. For an ordinary deployment whose ID equals its instance, `clusters/<cluster>/applications/<instance>/.envrc` contains:
 
 ```bash
 source_env ../../.envrc
