@@ -28,18 +28,21 @@ export BASE_REPO="$PWD"
 
 ## Select the installation for the new cluster
 
+Choose one starting condition. Both paths continue at [Register the Hetzner project](#register-the-hetzner-project).
+
 ### Use an existing installation
 
-To create another cluster in this installation:
+Enter its actual installation root, which already contains `installation.yaml` and the approved root `.envrc`:
 
 ```bash
-export WORK_DIR_ROOT="$HOME/bartl"
-cd "$WORK_DIR_ROOT/acme/acme-installation"
+cd "$HOME/bartl/acme/acme-installation"
 ```
+
+Continue at the next prompt so direnv loads `WORK_DIR`, `VALUES` and the retained installation choices. Do not run the new-installation block.
 
 ### Create a new installation
 
-Choose the customer, installation, authorized DNS suffix and absolute storage root:
+Choose the customer, installation, authorized DNS suffix and absolute storage root. Use a new directory; this block creates the initial record, not a replacement for an existing one:
 
 ```bash
 # Choose these once
@@ -52,7 +55,8 @@ export WORK_DIR_ROOT="$HOME/bartl"
 export WORK_DIR="$WORK_DIR_ROOT/$CUSTOMER_ID/${INSTALLATION_ID}-installation"
 export VALUES="$WORK_DIR/installation.yaml"
 
-mkdir -p "$WORK_DIR"
+mkdir -p "$(dirname "$WORK_DIR")"
+mkdir "$WORK_DIR"
 yq -n '
   .schemaVersion = 1 |
   .customer = strenv(CUSTOMER_ID) |
@@ -146,7 +150,7 @@ direnv allow "$WORK_DIR/clusters/$NEW_CLUSTER_ID/base"
 cd "$WORK_DIR/clusters/$NEW_CLUSTER_ID/base"
 ```
 
-Continue at the next prompt. The `base/` selector adds Hetzner machine context; cluster and application selectors load only Kubernetes access.
+Continue at the next prompt. The `base/` selector adds Hetzner machine context; cluster and application selectors load only Kubernetes access. Creation below is for unprovisioned entries; if resources already exist, use their recorded identities rather than repeating creation.
 
 ## Create the VM with Hetzner
 
@@ -222,7 +226,7 @@ yq '.vms[strenv(VM_ID)].observed' "$VALUES"
 
 If creation succeeds but recording fails, retain the output and reconcile the record through the provider API. Do not create another VM.
 
-## Connect and follow logs
+## Prepare SSH access
 
 On the workstation, configure SSH with your administrator identity and a host-key file bound to this observed Hetzner server ID. An authorized replacement can reuse an address without inheriting the deleted VM's trust:
 
@@ -240,19 +244,19 @@ Host $CLUSTER_ID-node1
 EOF
 ```
 
-Connect once and accept this VM's host key at SSH's confirmation prompt. This trusts the first connection; later connections to the same server ID reject changed keys. First confirm the recorded server ID/address against the provider. Do not change IDs or select an empty trust file merely to bypass an unexpected key change. For an existing VM using the older `known_hosts` filename, retain its existing SSH configuration and trusted key; adopting a new filename is not a reason to repeat first-use trust.
+Confirm the recorded server ID/address against the provider, then accept this VM's host key at SSH's confirmation prompt. This trusts the first connection; later connections to the same server ID reject changed keys. An unexpected key change requires investigation, not another empty trust file.
 
 ```bash
 ssh -F "$CLUSTER_WORK_DIR/ssh.config" -o StrictHostKeyChecking=ask "$CLUSTER_ID-node1" 'cloud-init status --wait'
 ```
 
-Subsequent connections use strict host-key checking:
+## Install K3s
+
+From the workstation, open the new VM's root shell. The command supplies its public address to the remote installation:
 
 ```bash
 ssh -F "$CLUSTER_WORK_DIR/ssh.config" -t "$CLUSTER_ID-node1" "export VM_IPV4='$HOST'; exec bash -l"
 ```
-
-## Install K3s
 
 In the new VM's root shell, configure this single-node profile to preserve client source addresses through Traefik. K3s loads the [HelmChartConfig manifest](https://docs.k3s.io/helm#customizing-packaged-components-with-helmchartconfig) during bootstrap:
 
@@ -286,7 +290,13 @@ INSTALL_K3S_VERSION='v1.36.5+k3s1' sh ./k3s-install.sh server \
 systemctl status k3s --no-pager
 ```
 
-Require K3s to be active. For diagnosis use `journalctl -u k3s`; do not bootstrap over a partial installation. Run `exit` to return to the workstation.
+Require K3s to be active. For diagnosis use `journalctl -u k3s`; do not bootstrap over a partial installation.
+
+Return to the workstation before continuing:
+
+```bash
+exit
+```
 
 ## Enable workstation access
 
@@ -309,7 +319,7 @@ helm install cert-manager oci://quay.io/jetstack/charts/cert-manager --kube-cont
   --set crds.enabled=true --wait=legacy --timeout 5m
 ```
 
-## Verify and hand over the base
+## Verify the base
 
 On the workstation:
 
@@ -334,11 +344,13 @@ helm --kube-context "$KUBE_CONTEXT" list --all-namespaces
 
 Require a Ready node, six available deployments, default `local-path` storage and Traefik ingress with `externalTrafficPolicy: Local`. Application allowlists still own admission; their acceptance checks verify allowed and denied requests through the actual route. The dedicated firewall must be attached to this VM, with TCP 22/6443 restricted to your IPv4/32 and TCP 80/443 public. No other attached rule may expose the API. The policy-rule check establishes controller setup, not application traffic isolation. Storage is node-local, not replicated.
 
-Retain `installation.yaml`, the root, cluster and `base/` `.envrc` selectors, `source-revision`, kubeconfig, trusted host public key and SSH access files independently of the VM. Track selectors, not plaintext access material. The successor needs an authorized administrator identity too.
+### Retain access and continue
 
-Before handing over to an application procedure, run `cd ..` and wait for the next prompt. Cluster context keeps Kubernetes access but clears machine fields.
+Retain `installation.yaml`, the root, cluster and `base/` `.envrc` selectors, `source-revision`, kubeconfig, trusted host public key and SSH access files independently of the VM. Track selectors, not plaintext access material. A successor also needs their own authorized administrator identity and access to these retained inputs.
 
-Verify directory-based access in a fresh shell as below; this avoids retaining the creation shell's exported targets as direnv's previous environment. Hand the application operator `WORK_DIR` and `CLUSTER_ID`; applications use the same record and own their DNS, certificate issuance, credentials and backup. Stop for a base-only request, otherwise follow the selected application's README, for example [Keycloak](https://github.com/bartlapp/bartl-keycloak/blob/main/README.md).
+Creation is complete. In a fresh Bash shell, follow [Work with an existing cluster](#work-with-an-existing-cluster) to check that retained access works without the creation shell's exported targets. Stop here for a base-only installation.
+
+For a selected application, hand over the actual cluster directory and shared `installation.yaml`; enter cluster scope, not `base/`, before following its README, for example [Keycloak](https://github.com/bartlapp/bartl-keycloak/blob/main/README.md). Applications own their DNS, certificate issuance, credentials and backups.
 
 ## Work with an existing cluster
 
@@ -352,21 +364,43 @@ Continue at the next prompt.
 
 ### If your public IP changed
 
-With the selected Hetzner project's `HCLOUD_TOKEN` supplied, update SSH/API access:
+With the selected Hetzner project's `HCLOUD_TOKEN` supplied, enter machine scope and continue at the next prompt:
 
 ```bash
-BASE_REPO="$HOME/repos/bartlapp/base-k3s"
-bash "$BASE_REPO/scripts/update-admin-ip.sh"
+cd "$CLUSTER_WORK_DIR"
 ```
+
+Inspect the recorded VM and dedicated firewall. Confirm the firewall is attached only to this VM and that its TCP 22/6443 rules are the administrative access rules:
+
+```bash
+hcloud server describe "$ID"
+hcloud firewall describe "$FIREWALL_ID"
+```
+
+Update those two rules to your current public IPv4, preserving the other rules:
+
+```bash
+ADMIN_IPV4=$(curl --ipv4 --fail --silent --show-error https://api.ipify.org)
+hcloud firewall describe "$FIREWALL_ID" --output json |
+  jq --arg source "$ADMIN_IPV4/32" '.rules | map(
+    if .direction == "in" and .protocol == "tcp" and (.port == "22" or .port == "6443")
+    then .source_ips = [$source] else . end
+  )' |
+  hcloud firewall replace-rules "$FIREWALL_ID" --rules-file -
+hcloud firewall describe "$FIREWALL_ID"
+```
+
+Require TCP 22/6443 to allow only your new IPv4/32; resolve overlapping rules before relying on the restriction. Return to cluster scope with `cd ..`, then continue at the next prompt.
 
 ### Connect
 
 ```bash
-kubectl get svc
+kubectl --context "$KUBE_CONTEXT" get nodes
+kubectl --context "$KUBE_CONTEXT" get svc
 ssh -F "$CLUSTER_WORK_DIR/ssh.config" "$CLUSTER_ID-node1"
 ```
 
-Back on the workstation, select another prepared cluster by entering its directory:
+Run `exit` to return from the VM shell to the workstation before selecting another prepared cluster:
 
 ```bash
 cd "$WORK_DIR/clusters/cluster-2"
