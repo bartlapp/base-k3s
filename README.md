@@ -7,6 +7,11 @@ This repository contains the maintained public recipe and context tools. Keep ac
 - [Prerequisites](#prerequisites)
 - [Create a cluster](#get-the-base-recipe)
 - [Work with an existing cluster](#work-with-an-existing-cluster)
+- [Use supplied cluster access](#use-supplied-cluster-access)
+- [Select Hetzner machine context](#select-hetzner-machine-context)
+- [Maintain local context](#maintain-local-context)
+- [Preserve client addresses for restricted access](#preserve-client-addresses-for-restricted-access)
+- [Follow Kubernetes events](#follow-kubernetes-events)
 - [Remove a cluster](#remove-the-selected-cluster)
 
 ## Prerequisites
@@ -326,26 +331,20 @@ Verify directory-based access in a fresh shell as below; this avoids retaining t
 
 ## Work with an existing cluster
 
-Enter the prepared cluster directory:
+In a fresh Bash shell with direnv enabled, enter the prepared cluster directory:
 
 ```bash
 cd "$HOME/bartl/acme/acme-installation/clusters/cluster-1"
 ```
 
-At the next prompt, the cluster context is active. SSH uses the identity referenced by the retained SSH configuration; kubectl uses the retained kubeconfig.
+Continue at the next prompt.
 
-### Update administrator access if your public IP changed
+### If your public IP changed
 
-Supply the selected project's `HCLOUD_TOKEN` and select the Base checkout:
-
-```bash
-export HCLOUD_TOKEN="CHANGE_TO_ACTUAL_TOKEN"
-export BASE_REPO="$HOME/repos/bartlapp/base-k3s"
-```
-
-Update this cluster's SSH/API firewall rules before connecting:
+With the selected Hetzner project's `HCLOUD_TOKEN` supplied, update SSH/API access:
 
 ```bash
+BASE_REPO="$HOME/repos/bartlapp/base-k3s"
 bash "$BASE_REPO/scripts/update-admin-ip.sh"
 ```
 
@@ -356,34 +355,31 @@ kubectl get svc
 ssh -F "$CLUSTER_WORK_DIR/ssh.config" "$CLUSTER_ID-node1"
 ```
 
-The default choices give the SSH alias `cluster-1-node1`. Other installations may reuse it: each cluster has its own SSH configuration, trusted host keys and kubeconfig. No global SSH entries are needed.
-
-To select another prepared cluster, enter its directory. Subdirectories retain the selected environment. Returning to the installation directory keeps installation context but clears cluster selection:
+Back on the workstation, select another prepared cluster by entering its directory:
 
 ```bash
 cd "$WORK_DIR/clusters/cluster-2"
-# Work with cluster-2, then leave both cluster scopes:
+```
+
+Return to installation scope when finished:
+
+```bash
 cd "$WORK_DIR"
 ```
 
-At installation level, `KUBECONFIG=/dev/null` prevents implicit Kubernetes access. Leaving the installation restores the previous environment. Neither action revokes credentials, unloads SSH-agent keys or closes sessions. Creation inputs and other manually set variables are not active cluster selections. Supply `HCLOUD_TOKEN` explicitly for provider operations.
+Installation scope clears the Kubernetes target. Leaving the installation restores the shell's previous environment; it does not revoke credentials.
 
-### Select Hetzner machine context
+## Select Hetzner machine context
 
-For VM creation, inspection or removal, enter the selected cluster's `base/` directory. If the root loader lacks `load_hetzner`, first [refresh the root context](#refresh-an-existing-installations-context). Create the machine selector only if absent, then review and approve it:
+From the prepared cluster directory, select its Hetzner VM for provider operations:
 
 ```bash
-if [ ! -e "$CLUSTER_WORK_DIR/.envrc" ]; then
-  printf 'source_env ../.envrc\nload_hetzner\n' > "$CLUSTER_WORK_DIR/.envrc"
-fi
-cat "$CLUSTER_WORK_DIR/.envrc"
-direnv allow "$CLUSTER_WORK_DIR"
 cd "$CLUSTER_WORK_DIR"
 ```
 
-At the next prompt this selects the single self-managed Hetzner VM's provider, name, size, location and recorded resource IDs. Missing machine inputs stop machine selection, not ordinary cluster access. Return to cluster scope with `cd ..`; applications never source this machine selector.
+Continue at the next prompt. Return to cluster scope with `cd ..`. If the machine selector is missing, [adopt it once](#adopt-a-missing-machine-selector); ordinary selection does not recreate or reapprove it.
 
-### Use supplied cluster access
+## Use supplied cluster access
 
 An equivalent external cluster needs its complete retained installation record and supplied kubeconfig, not Hetzner machine fields. Obtain this checkout through [Get the Base recipe](#get-the-base-recipe). In direnv-hooked Bash, select the existing installation, recorded cluster key and protected access file:
 
@@ -416,6 +412,25 @@ kubectl --context "$KUBE_CONTEXT" get nodes,storageclass
 
 Retain selectors and independently recoverable credentials, then follow the selected package's prerequisites. No `base/.envrc` is needed. Provisioning, provider firewalls and infrastructure removal remain with that cluster's administrator; this procedure neither provisions nor adopts external resources.
 
+
+## Maintain local context
+
+Use these procedures only for missing selectors or an incompatible root loader.
+
+### Adopt a missing machine selector
+
+Start in the prepared cluster directory with a root loader supplying `load_hetzner`. If that interface is missing, [refresh the loader](#refresh-an-existing-installations-context), then re-enter the cluster directory and wait for the next prompt.
+
+```bash
+(
+  set -o noclobber
+  printf 'source_env ../.envrc\nload_hetzner\n' > "$CLUSTER_WORK_DIR/.envrc"
+)
+cat "$CLUSTER_WORK_DIR/.envrc"
+direnv allow "$CLUSTER_WORK_DIR"
+```
+
+Then [select machine context](#select-hetzner-machine-context). Supplied external clusters do not need this selector.
 
 ### Refresh an existing installation's context
 
@@ -469,31 +484,8 @@ direnv allow .
 
 Wait for the next shell prompt before continuing with the application's resumption procedure. This is a one-time selector adoption, not record creation, chart acquisition or credential generation. The loader rejects a selector whose retained cluster or directory placement does not match the current directory. Do not select a deployment by exporting its key.
 
-### Work in a deployment directory
 
-Application recipes record each new deployment in `installation.yaml`, create its working directory and write a selector once. For an existing deployment without a selector, use [Adopt a missing deployment selector](#adopt-a-missing-deployment-selector), then resume the application recipe. The root loader provides `load_deployment DEPLOYMENT_ID`; the selector must load the cluster first. For an ordinary deployment whose ID equals its instance, `clusters/<cluster>/applications/<instance>/.envrc` contains:
-
-```bash
-source_env ../../.envrc
-load_deployment "keycloak"
-```
-
-A replacement with a different deployment ID uses `clusters/<cluster>/applications/<instance>/deployments/<deployment>/.envrc` instead:
-
-```bash
-source_env ../../../../.envrc
-load_deployment "keycloak-next"
-```
-
-Use the literal recorded ID in each selector, not a copied application configuration. Approve a newly written selector explicitly with `direnv allow /absolute/path/to/deployment`, enter that directory, then continue at the next prompt. An already approved deployment directory can be entered directly in a fresh shell; the selector loads installation and cluster context before the deployment.
-
-The deployment context exports `DEPLOYMENT`, `INSTANCE`, `NS`, `RELEASE`, `PACKAGE`, `PACKAGE_VERSION` and `CHART_REF` from the record. It rejects a deployment assigned to another cluster or a directory different from its derived `INSTALL_DIR`. `source_env` temporarily enters the sourced file's directory: root and cluster selection therefore use their own directories, while `load_deployment` runs after it returns to the deployment directory.
-
-`CHART` points to the normalized unpacked chart root at `$WORK_DIR/packages/$PACKAGE/$PACKAGE_VERSION`, without another chart-name subdirectory. Package keys identify immutable release records; a replacement selecting different artifacts uses a new package key. Activation only reads the installation record and selects paths. It does not create directories, download charts, retrieve credentials, contact Kubernetes or render configuration; the application recipe performs those explicit operations.
-
-Returning to the cluster directory clears all deployment exports, including `INSTALL_DIR` and `CHART`, while retaining cluster access. Returning to the installation root clears both cluster and deployment selection.
-
-### Preserve client addresses for restricted access
+## Preserve client addresses for restricted access
 
 With the target cluster selected, use these workstation commands before an application relies on ingress source-IP restrictions. They change Traefik's Service policy for this single-node cluster and require cluster-level permission; keep the current working directory.
 
@@ -516,7 +508,7 @@ kubectl --context "$KUBE_CONTEXT" -n kube-system wait service/traefik \
 
 The Service setting preserves source addresses; the application's allowlist still owns admission. Verify allowed and denied access through its real HTTPS route before activation.
 
-### Follow Kubernetes events
+## Follow Kubernetes events
 
 After selecting the cluster in another terminal, run either follower. `Ctrl-c` stops the follower, not the service:
 
