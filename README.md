@@ -11,7 +11,7 @@ This repository contains the maintained public recipe and context tools. Keep ac
 
 ## Prerequisites
 
-Use workstation Bash with the [operator tools](https://github.com/bartlapp/bartl-app/blob/main/docs/operator-workstation.md#check-the-workstation) and [direnv hooked into Bash](https://direnv.net/docs/hook.html).
+Use workstation Bash with the [common operator tools](https://github.com/bartlapp/bartl-app/blob/main/docs/operator-workstation.md#check-the-workstation) and [direnv hooked into Bash](https://direnv.net/docs/hook.html). Creating or administering Hetzner machines additionally requires the [Hetzner tools](https://github.com/bartlapp/bartl-app/blob/main/docs/operator-workstation.md#hetzner-operations); using supplied cluster access does not.
 
 ## Get the Base recipe
 
@@ -370,7 +370,7 @@ At installation level, `KUBECONFIG=/dev/null` prevents implicit Kubernetes acces
 
 ### Select Hetzner machine context
 
-For VM creation, inspection or removal, enter the selected cluster's `base/` directory. On an older installation first [refresh the root context](#refresh-an-existing-installations-context). Create the machine selector only if absent, then review and approve it:
+For VM creation, inspection or removal, enter the selected cluster's `base/` directory. If the root loader lacks `load_hetzner`, first [refresh the root context](#refresh-an-existing-installations-context). Create the machine selector only if absent, then review and approve it:
 
 ```bash
 if [ ! -e "$CLUSTER_WORK_DIR/.envrc" ]; then
@@ -393,7 +393,7 @@ export TARGET_CLUSTER=cluster-1
 export SUPPLIED_KUBECONFIG=/protected/supplied-kubeconfig
 ```
 
-For an installation without a root `.envrc`, copy `"$BASE_REPO/installation.envrc"` to `"$WORK_DIR/.envrc"`, enter `"$WORK_DIR"`, review `.envrc` and run `direnv allow`. For an older root context use [Refresh an existing installation's context](#refresh-an-existing-installations-context). At the next prompt, prepare a missing cluster selector and access file:
+For an installation without a root `.envrc`, copy `"$BASE_REPO/installation.envrc"` to `"$WORK_DIR/.envrc"`, enter `"$WORK_DIR"`, review `.envrc` and run `direnv allow`. If the existing loader lacks `load_cluster`, use [Refresh an existing installation's context](#refresh-an-existing-installations-context). Otherwise keep it unchanged. At the next prompt, prepare a missing cluster selector and access file:
 
 ```bash
 mkdir -p "$WORK_DIR/clusters/$TARGET_CLUSTER/base"
@@ -419,7 +419,7 @@ Retain selectors and independently recoverable credentials, then follow the sele
 
 ### Refresh an existing installation's context
 
-Before using deployment directories with an installation created from an older Base recipe, refresh its root `.envrc` once from the current Base checkout. Select the checkout and enter the installation root:
+Use this procedure only when the existing root loader lacks the context interface needed by the selected operation (`load_cluster`, `load_hetzner` or `load_deployment`). An older checkout alone is not a reason to replace a compatible loader. Select the checkout and enter the installation root:
 
 ```bash
 export BASE_REPO="$HOME/repos/bartlapp/base-k3s"
