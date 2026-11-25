@@ -7,10 +7,6 @@ This repository contains the maintained public recipe and context tools. Keep ac
 - [Prerequisites](#prerequisites)
 - [Create a cluster](#get-the-base-recipe)
 - [Work with an existing cluster](#work-with-an-existing-cluster)
-- [Use supplied cluster access](#use-supplied-cluster-access)
-- [Select Hetzner machine context](#select-hetzner-machine-context)
-- [Maintain local context](#maintain-local-context)
-- [Preserve client addresses for restricted access](#preserve-client-addresses-for-restricted-access)
 - [Follow Kubernetes events](#follow-kubernetes-events)
 - [Remove a cluster](#remove-the-selected-cluster)
 
@@ -258,7 +254,7 @@ ssh -F "$CLUSTER_WORK_DIR/ssh.config" -t "$CLUSTER_ID-node1" "export VM_IPV4='$H
 
 ## Install K3s
 
-In the new VM's root shell:
+In the new VM's root shell, configure this single-node profile to preserve client source addresses through Traefik. K3s loads the [HelmChartConfig manifest](https://docs.k3s.io/helm#customizing-packaged-components-with-helmchartconfig) during bootstrap:
 
 ```bash
 set -euo pipefail
@@ -272,6 +268,19 @@ curl -fL --proto '=https' --tlsv1.2 -o k3s-install.sh \
 sha256sum --check <<'SHA256'
 46177d4c99440b4c0311b67233823a8e8a2fc09693f6c89af1a7161e152fbfad  k3s-install.sh
 SHA256
+install -d -m 0755 /var/lib/rancher/k3s/server/manifests
+cat > /var/lib/rancher/k3s/server/manifests/traefik-config.yaml <<'YAML'
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    service:
+      spec:
+        externalTrafficPolicy: Local
+YAML
 INSTALL_K3S_VERSION='v1.36.5+k3s1' sh ./k3s-install.sh server \
   --write-kubeconfig-mode=600 --tls-san "$VM_IPV4"
 systemctl status k3s --no-pager
@@ -312,6 +321,8 @@ done
 for deployment in cert-manager cert-manager-webhook cert-manager-cainjector; do
   kubectl --context "$KUBE_CONTEXT" -n cert-manager rollout status "deployment/$deployment" --timeout=300s
 done
+kubectl --context "$KUBE_CONTEXT" -n kube-system wait service/traefik \
+  --for=jsonpath='{.spec.externalTrafficPolicy}'=Local --timeout=5m
 kubectl --context "$KUBE_CONTEXT" get storageclass,ingressclass
 ssh -F "$CLUSTER_WORK_DIR/ssh.config" "$CLUSTER_ID-node1" 'iptables -S KUBE-ROUTER-FORWARD'
 hcloud server describe "$ID"
@@ -321,7 +332,7 @@ helm version --short
 helm --kube-context "$KUBE_CONTEXT" list --all-namespaces
 ```
 
-Require a Ready node, six available deployments, default `local-path` storage and Traefik ingress. The dedicated firewall must be attached to this VM, with TCP 22/6443 restricted to your IPv4/32 and TCP 80/443 public. No other attached rule may expose the API. The policy-rule check establishes controller setup, not application traffic isolation. Storage is node-local, not replicated.
+Require a Ready node, six available deployments, default `local-path` storage and Traefik ingress with `externalTrafficPolicy: Local`. Application allowlists still own admission; their acceptance checks verify allowed and denied requests through the actual route. The dedicated firewall must be attached to this VM, with TCP 22/6443 restricted to your IPv4/32 and TCP 80/443 public. No other attached rule may expose the API. The policy-rule check establishes controller setup, not application traffic isolation. Storage is node-local, not replicated.
 
 Retain `installation.yaml`, the root, cluster and `base/` `.envrc` selectors, `source-revision`, kubeconfig, trusted host public key and SSH access files independently of the VM. Track selectors, not plaintext access material. The successor needs an authorized administrator identity too.
 
@@ -369,145 +380,6 @@ cd "$WORK_DIR"
 
 Installation scope clears the Kubernetes target. Leaving the installation restores the shell's previous environment; it does not revoke credentials.
 
-## Select Hetzner machine context
-
-From the prepared cluster directory, select its Hetzner VM for provider operations:
-
-```bash
-cd "$CLUSTER_WORK_DIR"
-```
-
-Continue at the next prompt. Return to cluster scope with `cd ..`. If the machine selector is missing, [adopt it once](#adopt-a-missing-machine-selector); ordinary selection does not recreate or reapprove it.
-
-## Use supplied cluster access
-
-An equivalent external cluster needs its complete retained installation record and supplied kubeconfig, not Hetzner machine fields. Obtain this checkout through [Get the Base recipe](#get-the-base-recipe). In direnv-hooked Bash, select the existing installation, recorded cluster key and protected access file:
-
-```bash
-export WORK_DIR="$HOME/bartl/acme/acme-installation"
-export TARGET_CLUSTER=cluster-1
-export SUPPLIED_KUBECONFIG=/protected/supplied-kubeconfig
-```
-
-For an installation without a root `.envrc`, copy `"$BASE_REPO/installation.envrc"` to `"$WORK_DIR/.envrc"`, enter `"$WORK_DIR"`, review `.envrc` and run `direnv allow`. If the existing loader lacks `load_cluster`, use [Refresh an existing installation's context](#refresh-an-existing-installations-context). Otherwise keep it unchanged. At the next prompt, prepare a missing cluster selector and access file:
-
-```bash
-mkdir -p "$WORK_DIR/clusters/$TARGET_CLUSTER/base"
-(
-  set -o noclobber
-  printf 'source_env ../../.envrc\nload_cluster "${PWD##*/}"\n' \
-    > "$WORK_DIR/clusters/$TARGET_CLUSTER/.envrc"
-)
-install -m 600 "$SUPPLIED_KUBECONFIG" "$WORK_DIR/clusters/$TARGET_CLUSTER/base/kubeconfig"
-direnv allow "$WORK_DIR/clusters/$TARGET_CLUSTER"
-cd "$WORK_DIR/clusters/$TARGET_CLUSTER"
-```
-
-For already prepared access, enter its cluster directory instead of recreating selectors or replacing credentials. At the next prompt:
-
-```bash
-kubectl --context "$KUBE_CONTEXT" get --raw=/readyz
-kubectl --context "$KUBE_CONTEXT" get nodes,storageclass
-```
-
-Retain selectors and independently recoverable credentials, then follow the selected package's prerequisites. No `base/.envrc` is needed. Provisioning, provider firewalls and infrastructure removal remain with that cluster's administrator; this procedure neither provisions nor adopts external resources.
-
-
-## Maintain local context
-
-Use these procedures only for missing selectors or an incompatible root loader.
-
-### Adopt a missing machine selector
-
-Start in the prepared cluster directory with a root loader supplying `load_hetzner`. If that interface is missing, [refresh the loader](#refresh-an-existing-installations-context), then re-enter the cluster directory and wait for the next prompt.
-
-```bash
-(
-  set -o noclobber
-  printf 'source_env ../.envrc\nload_hetzner\n' > "$CLUSTER_WORK_DIR/.envrc"
-)
-cat "$CLUSTER_WORK_DIR/.envrc"
-direnv allow "$CLUSTER_WORK_DIR"
-```
-
-Then [select machine context](#select-hetzner-machine-context). Supplied external clusters do not need this selector.
-
-### Refresh an existing installation's context
-
-Use this procedure only when the existing root loader lacks the context interface needed by the selected operation (`load_cluster`, `load_hetzner` or `load_deployment`). An older checkout alone is not a reason to replace a compatible loader. Select the checkout and enter the installation root:
-
-```bash
-export BASE_REPO="$HOME/repos/bartlapp/base-k3s"
-cd "$HOME/bartl/acme/acme-installation"
-```
-
-At the next prompt, review the current loader and any installation-local customizations before replacing it:
-
-```bash
-cat .envrc
-cat "$BASE_REPO/installation.envrc"
-cp "$BASE_REPO/installation.envrc" .envrc
-direnv allow
-```
-
-Continue at the next prompt, after direnv reloads the approved root context. Retain any necessary local customizations deliberately; do not copy an older installation's loader into a new installation. Newly created installations already use the checkout's `installation.envrc`.
-
-### Adopt a missing deployment selector
-
-Starting condition: the retained root loader supplies `load_deployment` and the cluster selector works. If the installation predates that interface, complete [Refresh an existing installation's context](#refresh-an-existing-installations-context) first; otherwise keep its loader unchanged.
-
-For an existing deployment directory without a selector, enter the actual retained directory. For the ordinary example:
-
-```bash
-cd "$WORK_DIR/clusters/cluster-1/applications/keycloak"
-```
-
-For a nested replacement, enter its existing `clusters/<cluster>/applications/<instance>/deployments/<deployment>` directory instead. Continue at the next prompt.
-
-Select the deployment's retained key from `installation.yaml`, not a new key. Use `../../.envrc` for an ordinary `applications/<instance>` directory or `../../../../.envrc` for a nested `applications/<instance>/deployments/<deployment>` directory:
-
-```bash
-DEPLOYMENT_ID=keycloak
-CLUSTER_ENV=../../.envrc
-(
-  set -o noclobber
-  printf 'source_env %s\nload_deployment "%s"\n' "$CLUSTER_ENV" "$DEPLOYMENT_ID" > .envrc
-)
-```
-
-The write refuses to overwrite an existing `.envrc`. Review the selector before explicitly approving it:
-
-```bash
-cat .envrc
-direnv allow .
-```
-
-Wait for the next shell prompt before continuing with the application's resumption procedure. This is a one-time selector adoption, not record creation, chart acquisition or credential generation. The loader rejects a selector whose retained cluster or directory placement does not match the current directory. Do not select a deployment by exporting its key.
-
-
-## Preserve client addresses for restricted access
-
-With the target cluster selected, use these workstation commands before an application relies on ingress source-IP restrictions. They change Traefik's Service policy for this single-node cluster and require cluster-level permission; keep the current working directory.
-
-```bash
-kubectl --context "$KUBE_CONTEXT" -n kube-system get helmchartconfig traefik \
-  --ignore-not-found -o yaml > "$CLUSTER_WORK_DIR/traefik-config.yaml"
-if [ ! -s "$CLUSTER_WORK_DIR/traefik-config.yaml" ]; then
-  yq -n '.apiVersion = "helm.cattle.io/v1" | .kind = "HelmChartConfig" |
-    .metadata.name = "traefik" | .metadata.namespace = "kube-system"' \
-    > "$CLUSTER_WORK_DIR/traefik-config.yaml"
-fi
-TRAEFIK_VALUES=$(yq -r '.spec.valuesContent // "{}"' "$CLUSTER_WORK_DIR/traefik-config.yaml" |
-  yq '.service.spec.externalTrafficPolicy = "Local"')
-TRAEFIK_VALUES="$TRAEFIK_VALUES" yq -i '.spec.valuesContent = strenv(TRAEFIK_VALUES)' \
-  "$CLUSTER_WORK_DIR/traefik-config.yaml"
-kubectl --context "$KUBE_CONTEXT" apply -f "$CLUSTER_WORK_DIR/traefik-config.yaml"
-kubectl --context "$KUBE_CONTEXT" -n kube-system wait service/traefik \
-  --for=jsonpath='{.spec.externalTrafficPolicy}'=Local --timeout=5m
-```
-
-The Service setting preserves source addresses; the application's allowlist still owns admission. Verify allowed and denied access through its real HTTPS route before activation.
-
 ## Follow Kubernetes events
 
 After selecting the cluster in another terminal, run either follower. `Ctrl-c` stops the follower, not the service:
@@ -524,7 +396,13 @@ ssh -F "$CLUSTER_WORK_DIR/ssh.config" -t "$CLUSTER_ID-node1" 'journalctl -u k3s 
 
 This removes one fully provisioned single-node cluster created by this recipe: its VM, dedicated firewall and primary IPs. Deleting the VM destroys its node-local application data. Complete application removal or confirm source retirement, settle backup/data retention and remove the cluster's service DNS records first. Do not restart a retired source merely to uninstall it.
 
-Select [Hetzner machine context](#select-hetzner-machine-context) and supply the selected provider's `HCLOUD_TOKEN`. Inspect the selected resources:
+From the prepared cluster directory, select its machine context:
+
+```bash
+cd "$CLUSTER_WORK_DIR"
+```
+
+Continue at the next prompt with the selected provider's `HCLOUD_TOKEN` supplied. Inspect the selected resources:
 
 ```bash
 set -euo pipefail
