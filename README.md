@@ -4,6 +4,8 @@ An example base for Bartlized services: one or more independent single-node K3s 
 
 This repository contains the maintained public recipe and context tools. Keep actual installation records, protected inputs, internal operating decisions and raw qualification output outside the product repository. Historical private repositories remain archives, not parallel maintained versions.
 
+For changes to this recipe or its context tools, start at [repository instructions](AGENTS.md). The shared [operator-procedure and qualification standard](https://github.com/bartlapp/bartl-app/blob/main/docs/how-to-bartlize.md#deliver-a-usable-package) governs Base's infrastructure procedures as well as the application handoffs.
+
 - [Prerequisites](#prerequisites)
 - [Create a cluster](#get-the-base-recipe)
 - [Work with an existing cluster](#work-with-an-existing-cluster)
